@@ -2,9 +2,10 @@ module TinyHNSW
 
 using Distances, Graphs
 using Random
-# Write your package code here.
+
+export NaiveHeurestic, NNHeurestic, HNSW, insert!
 
 include("hnsw.jl")
-include("graph.jl")
+# include("graph.jl")
 
 end

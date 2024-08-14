@@ -7,33 +7,39 @@ struct NNHeurestic <: SelectMethod
     keepCandidate::Bool
 end
 
-struct HNSW{T,G<:AbstractGraph,F<:Real}
+struct HNSW{T,VG<:AbstractVector{<:Graphs.AbstractSimpleGraph},F<:Real}
     data::Vector{T}
     M::Int # numbers of neighbors to consider 
     M_max::Int # maximum number of neighbors
     mL::F
     efConstruction::Int
-    graphs::Vector{G} # lower level at smaller index
+    graphs::VG # lower level at smaller index
+    method::SelectMethod
     distance::Metric
 end
 
-function HNSW{T}(
-    data::Vector{T}, M::Int, M_max::Int, mL::Float64, distance::Metric
+function HNSW(
+    data::Vector{T},
+    M::Int,
+    M_max::Int,
+    efConstruction::Int,
+    mL::Float64,
+    method::SelectMethod,
+    distance::Metric,
 ) where {T}
-    l_init = assignl(mL)
-    graphs = [SimpleGraph{Int}(1) for l in l_init]
-    hnsw = HNSW(data[1], M, M_max, mL, efConstruction, graphs, distance)
-    for pt in data
-        insert!(hnsw, pt)
+    graphs = [SimpleGraph{Int}(1) for _ in 1:assignl(mL)]
+    hnsw = HNSW([data[1]], M, M_max, mL, efConstruction, graphs, method, distance)
+    for pt in view(data,2:length(data))
+        insert!(hnsw, pt, hnsw.method)
     end
     return hnsw
 end
 
-assignl(mL::F) where {F<:Real} = floor(-log(rand()) * mL)
+assignl(mL::F) where {F<:Real} = Int(floor(-log(rand()) * mL)) + 1
 
 enterpoint(hnsw::HNSW) = vertices(hnsw.graphs[end])[1]
 
-function insert!(hnsw::HNSW{T,G,F}, q::T) where {T,G,F}
+function Base.insert!(hnsw::HNSW{T,G,F}, q::T, method::SelectMethod) where {T,G,F}
     new_idx = length(hnsw.data) + 1 # index of new point in graphs
     W = T[]
     ep = enterpoint(hnsw)
@@ -46,8 +52,30 @@ function insert!(hnsw::HNSW{T,G,F}, q::T) where {T,G,F}
     L = length(hnsw.graphs)
 
     for lc in L:-1:l+1
-        W = search_layer(hnsw[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
+        W = search_layer(hnsw.graphs[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
+        ep = sort(W; by = x-> hnsw.distance(q, hnsw.data[x]))[2]
     end
+
+    for lc in min(L,l):-1:1
+        W = search_layer(hnsw[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
+        neighbors = select_neighbors(method, q, hnsw.data, W, hnsw.M)
+        for n in neighbors
+            add_edge!(hnsw.graphs[lc], n, new_idx)
+        end
+        for e in neighbors
+            eneighbors = neighbors(hnsw.graphs[lc], e)  
+            if length(eneighbors) > hnsw.M_max
+                eNewConn = select_neighbors(method, hnsw.data, eneighbors, hnsw.M_max, hnsw.M_max)
+                for en in eneighbors
+                    if en ∉ eNewConn
+                        remove_edge!(hnsw.graphs[lc], e, en)
+                    end
+                end
+            end
+        end
+    end
+
+    # ep = W # what is the point?
 
     push!(hnsw.data, q)
     return hnsw
@@ -87,7 +115,16 @@ function select_neighbors(
     return sort(C; by=x -> dist(q, data[x]))[1:M]
 end
 
-function select_neighbors(method::NNHeurestic,q::T,C::Vector{P},M::Int) end
+function select_neighbors(method::NNHeurestic,q::T,C::Vector{P},M::Int,g::G) where{P,G,T} end
 
-function knn_search()
+function knn_search(hnsw::HNSW, q::T, K::Int, ef::Int) where {T}
+    W = T[]
+    ep = enterpoint(hnsw)
+    L = length(hnsw.graphs)
+    for lc in L:-1:1
+        W = search_layer(hnsw[lc], hnsw.data, q, ep, 1, hnsw.distance)
+        ep = sort(W; by = x -> hnsw.distance(q, hnsw.data[x]))[1]
+    end
+    W = search_layer(hnsw[1], hnsw.data, q, ep, ef, hnsw.distance)
+    return sort(W; by = x -> hnsw.distance(q, hnsw.data[x]))[1:K]
 end
