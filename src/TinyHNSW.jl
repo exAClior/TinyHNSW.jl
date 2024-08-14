@@ -1,6 +1,7 @@
 module TinyHNSW
 
-using Distance, Graph
+using Distances, Graphs
+using Random
 # Write your package code here.
 
 include("hnsw.jl")
