@@ -21,7 +21,7 @@ using TinyHNSW: assignl, enterpoint
     new_data = (1.0, 1.0)
     insert!(hnsw, new_data, method)
     @test hnsw.data == vcat(data[1],new_data)
-    collect(edges(hnsw.graphs[1])) == [Edge(1 => 2)]
+    @test collect(edges(hnsw.graphs[1])) == [Edge(1 => 2)]
 end
 
 @testset "search layer" begin

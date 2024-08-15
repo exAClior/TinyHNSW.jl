@@ -48,7 +48,7 @@ function Base.insert!(hnsw::HNSW{T,G,F}, q::T, method::SelectMethod) where {T,G,
     l = assignl(hnsw.mL) 
 
     for _ in length(hnsw.graphs):l
-        push!(hnsw.graphs, ApproxDelauneGraph{Int}(new_idx))
+        push!(hnsw.graphs, ApproxDelaunayGraph(new_idx))
     end
 
     L = length(hnsw.graphs)
@@ -62,7 +62,7 @@ function Base.insert!(hnsw::HNSW{T,G,F}, q::T, method::SelectMethod) where {T,G,
     for lc in l:-1:1
         W = search_layer(hnsw.graphs[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
         qneighbors = select_neighbors(method, hnsw.data, hnsw.distance, q, W, hnsw.M)
-        add_vertex!(hnsw.graphs[lc])
+        add_vertex!(hnsw.graphs[lc],new_idx)
         for n in qneighbors
             add_edge!(hnsw.graphs[lc], n, new_idx)
         end
@@ -158,9 +158,9 @@ function knn_search(hnsw::HNSW, q::T, K::Int, ef::Int) where {T}
     ep = enterpoint(hnsw)
     L = length(hnsw.graphs)
     for lc in L:-1:1
-        W = search_layer(hnsw[lc], hnsw.data, q, ep, 1, hnsw.distance)
-        ep = sort(W; by = x -> hnsw.distance(q, hnsw.data[x]))[1]
+        W = search_layer(hnsw.graphs[lc], hnsw.data, q, ep, 1, hnsw.distance)
+        ep = findmin([(hnsw.distance(q, hnsw.data[w]), w) for w in W])[2]
     end
-    W = search_layer(hnsw[1], hnsw.data, q, ep, ef, hnsw.distance)
-    return sort(W; by = x -> hnsw.distance(q, hnsw.data[x]))[1:K]
+    W = search_layer(hnsw.graphs[1], hnsw.data, q, ep, ef, hnsw.distance)
+    return sort(W; by=x -> hnsw.distance(q, hnsw.data[x]))[1:min(K, length(W))]
 end
