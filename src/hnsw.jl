@@ -35,8 +35,10 @@ function HNSW(
     return hnsw
 end
 
+# assigned highest level to a new point
 assignl(mL::F) where {F<:Real} = Int(floor(-log(rand()) * mL)) + 1
 
+# gets the first point in the highest level graph
 enterpoint(hnsw::HNSW) = vertices(hnsw.graphs[end])[1]
 
 function Base.insert!(hnsw::HNSW{T,G,F}, q::T, method::SelectMethod) where {T,G,F}
@@ -58,7 +60,7 @@ function Base.insert!(hnsw::HNSW{T,G,F}, q::T, method::SelectMethod) where {T,G,
 
     for lc in min(L,l):-1:1
         W = search_layer(hnsw[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
-        neighbors = select_neighbors(method, q, hnsw.data, W, hnsw.M)
+        neighbors = select_neighbors(method, hnsw.dist, q, hnsw.data, W, hnsw.M)
         for n in neighbors
             add_edge!(hnsw.graphs[lc], n, new_idx)
         end
@@ -81,9 +83,11 @@ function Base.insert!(hnsw::HNSW{T,G,F}, q::T, method::SelectMethod) where {T,G,
     return hnsw
 end
 
-function search_layer(g::G,data::AbstractVector{T}, q::T, ep::P, ef::Int,dist::Metric) where {G,P,T}
+function search_layer(
+    g::G, data::AbstractVector{T}, q::T, ep::P, ef::Int, dist::Metric
+) where {G,P,T}
     visited = [ep] # vector of graph nodes
-    candidate = [ep] 
+    candidate = [ep]
     nearest_neighbors = [ep]
     while length(candidate) > 0
         c_dist, c_idx = findmin([dist(q, data[c]) for c in candidate])
@@ -91,31 +95,57 @@ function search_layer(g::G,data::AbstractVector{T}, q::T, ep::P, ef::Int,dist::M
 
         c_dist > f_dist && break
 
-        for e in neighbors(g,candidate[c_idx])
-            if e ∉ visited
-                union!(visited,e)
-                f_dist, f_idx = findmax([dist(q, data[c]) for c in nearest_neighbors])
-                if dist(q,data[e]) < f_dist || length(nearest_neighbors) < ef
-                    union!(nearest_neighbors, e)
-                    union!(candidate, e)
-                    if length(candidate) > ef
-                        f_idx = findmax([dist(q, data[c]) for c in candidate])[2]
-                        pop!(candidate, f_idx)
-                    end
-                end
-            end
+        for e in neighbors(g, candidate[c_idx])
+
+            e ∈ visited && continue
+
+            union!(visited, e)
+            f_dist, f_idx = findmax([dist(q, data[c]) for c in nearest_neighbors])
+
+            dist(q, data[e]) >= f_dist && length(nearest_neighbors) >= ef && continue
+
+            union!(nearest_neighbors, e)
+            union!(candidate, e)
+
+            length(candidate) <= ef && continue
+
+            f_idx = findmax([dist(q, data[c]) for c in candidate])[2]
+            deleteat!(nearest_neighbors, f_idx)
         end
+        deleteat!(candidate, c_idx)
     end
     return nearest_neighbors
 end
 
+
+"""
+    select_neighbors(heuristic, dist, q, C, M)
+
+Selects the M nearest neighbors from the given set of candidates C based on the distance metric dist and query point q using the NaiveHeuristic.
+
+# Arguments
+- `heuristic::NaiveHeuristic`: The heuristic to use for neighbor selection.
+- `dist::Metric`: The distance metric to use for calculating distances between points.
+- `q::T`: The query point.
+- `C::AbstractVector{T}`: The set of candidate points.
+- `M::Int`: The number of nearest neighbors to select.
+
+# Returns
+An array of indices representing the M nearest neighbors from the candidate set C.
+"""
 function select_neighbors(
-    ::NaiveHeurestic, q::T, data::AbstractVector{T}, C::Vector{P}, M::Int
-) where {T,P}
-    return sort(C; by=x -> dist(q, data[x]))[1:M]
+    ::NaiveHeurestic,
+    dist::Metric,
+    q::T,
+    C::AbstractVector{T},
+    M::Int,
+) where {T}
+    return sort(C; by=x -> dist(q, x))[1:M]
 end
 
-function select_neighbors(method::NNHeurestic,q::T,C::Vector{P},M::Int,g::G) where{P,G,T} end
+function select_neighbors(
+    method::NNHeurestic, q::T, C::AbstractVector{T}, M::Int, g::G
+) where {G,T} error("Unimplemented yet") end
 
 function knn_search(hnsw::HNSW, q::T, K::Int, ef::Int) where {T}
     W = T[]
