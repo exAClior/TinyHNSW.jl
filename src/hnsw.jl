@@ -27,7 +27,7 @@ function HNSW(
     method::SelectMethod,
     distance::Metric,
 ) where {T}
-    graphs = [SimpleGraph{Int}(1) for _ in 1:assignl(mL)]
+    graphs = [ApproxDelaunayGraph(1) for _ in 1:assignl(mL)]
     hnsw = HNSW([data[1]], M, M_max, mL, efConstruction, graphs, method, distance)
     for pt in view(data,2:length(data))
         insert!(hnsw, pt, hnsw.method)
@@ -48,26 +48,31 @@ function Base.insert!(hnsw::HNSW{T,G,F}, q::T, method::SelectMethod) where {T,G,
     l = assignl(hnsw.mL) 
 
     for _ in length(hnsw.graphs):l
-        push!(hnsw.graphs, SimpleGraph{Int}(new_idx))
+        push!(hnsw.graphs, ApproxDelauneGraph{Int}(new_idx))
     end
 
     L = length(hnsw.graphs)
 
+    # get enterpoint on the highest level q appears
     for lc in L:-1:l+1
         W = search_layer(hnsw.graphs[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
-        ep = sort(W; by = x-> hnsw.distance(q, hnsw.data[x]))[2]
+        ep = W[findmin([(hnsw.distance(q, hnsw.data[w]), w) for w in W])[2]]
     end
 
-    for lc in min(L,l):-1:1
-        W = search_layer(hnsw[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
-        neighbors = select_neighbors(method, hnsw.dist, q, hnsw.data, W, hnsw.M)
-        for n in neighbors
+    for lc in l:-1:1
+        W = search_layer(hnsw.graphs[lc], hnsw.data, q, ep, hnsw.efConstruction, hnsw.distance)
+        qneighbors = select_neighbors(method, hnsw.data, hnsw.distance, q, W, hnsw.M)
+        add_vertex!(hnsw.graphs[lc])
+        for n in qneighbors
             add_edge!(hnsw.graphs[lc], n, new_idx)
         end
-        for e in neighbors
+        for e in qneighbors
             eneighbors = neighbors(hnsw.graphs[lc], e)  
-            if length(eneighbors) > hnsw.M_max
-                eNewConn = select_neighbors(method, hnsw.data, eneighbors, hnsw.M_max, hnsw.M_max)
+
+            if length(eneighbors) > (lc == 1 ? typemax(Int) : hnsw.M_max)
+                eNewConn = select_neighbors(
+                    method,hnsw.distance, hnsw.data, eneighbors, hnsw.M_max, hnsw.M_max
+                )
                 for en in eneighbors
                     if en ∉ eNewConn
                         remove_edge!(hnsw.graphs[lc], e, en)
@@ -135,12 +140,13 @@ An array of indices representing the M nearest neighbors from the candidate set 
 """
 function select_neighbors(
     ::NaiveHeurestic,
+    data::AbstractVector{T},
     dist::Metric,
     q::T,
-    C::AbstractVector{T},
+    C::AbstractVector{P},
     M::Int,
-) where {T}
-    return sort(C; by=x -> dist(q, x))[1:M]
+) where {T,P}
+    return sort(C; by=x -> dist(q, data[x]))[1:min(M,length(C))]
 end
 
 function select_neighbors(

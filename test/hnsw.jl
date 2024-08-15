@@ -2,6 +2,28 @@ using Test, TinyHNSW, TinyHNSW.Distances, TinyHNSW.Graphs, TinyHNSW.Random
 
 using TinyHNSW: assignl, enterpoint
 
+@testset "Constructor" begin
+    M = 3
+    M_max = 6 
+    mL = 1/log(M)
+    method = NaiveHeurestic()
+    metric = Euclidean()
+    efConstruction = 100
+    data = [(1.0, 2.0)]
+    hnsw = HNSW(data, M, M_max, efConstruction, mL, method, metric)
+
+    @test hnsw.data == data
+
+    ep = enterpoint(hnsw)
+
+    @test ep == 1
+
+    new_data = (1.0, 1.0)
+    insert!(hnsw, new_data, method)
+    @test hnsw.data == vcat(data[1],new_data)
+    collect(edges(hnsw.graphs[1])) == [Edge(1 => 2)]
+end
+
 @testset "search layer" begin
     dist = Euclidean()
     ep = 1 # entry point
@@ -57,30 +79,31 @@ end
     dist = Euclidean()
     method = NaiveHeurestic()
     M = 5 # number of neighbors to return 
-    target = (0.0,0.0)
-    db_sorted = [(0.0,0.0), (1.0,1.0), (2.0,2.0), (3.0,3.0), (4.0,4.0), (5.0,5.0), (6.0,6.0), (7.0,7.0), (8.0,8.0), (9.0,9.0)]
+    target = (0.0, 0.0)
+    db_sorted = [
+        (0.0, 0.0),
+        (1.0, 1.0),
+        (2.0, 2.0),
+        (3.0, 3.0),
+        (4.0, 4.0),
+        (5.0, 5.0),
+        (6.0, 6.0),
+        (7.0, 7.0),
+        (8.0, 8.0),
+        (9.0, 9.0),
+    ]
     db_permuted = shuffle(db_sorted)
 
-    selected_neighbors = select_neighbors(method, dist, target, db_permuted, M)
-    @test selected_neighbors == db_sorted[1:M] 
-end
+    selected_neighbors = select_neighbors(
+        method, db_permuted, dist, target, 1:length(db_sorted), M
+    )
+    @test db_permuted[selected_neighbors] == db_sorted[1:M]
 
-@testset "Constructor" begin
-    M = 3
-    M_max = 6 
-    mL = 1/log(M)
-    method = NaiveHeurestic()
-    metric = Euclidean()
-    efConstruction = 100
-    data = [(1.0, 2.0)]
-    hnsw = HNSW(data, M, M_max, efConstruction, mL, method, metric)
-
-    @test hnsw.data == data
-
-    ep = enterpoint(hnsw)
-
-    @test ep == 1
-
+    M = 100 # number of neighbors to return 
+    selected_neighbors = select_neighbors(
+        method, db_permuted, dist, target, 1:(length(db_sorted)), M
+    )
+    @test db_permuted[selected_neighbors] == db_sorted[1:length(db_sorted)]
 end
 
 
@@ -90,6 +113,4 @@ end
     nis = [count(==(i), levels) for i in 1:8]
 
     ratios = [nis[i] / nis[i+1] for i in 1:7] # how to test this?
-
-
 end
