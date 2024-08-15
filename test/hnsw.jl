@@ -2,6 +2,30 @@ using Test, TinyHNSW, TinyHNSW.Distances, TinyHNSW.Graphs, TinyHNSW.Random
 
 using TinyHNSW: assignl, enterpoint
 
+@testset "Find KNN" begin
+    d = 10
+    xmax = 10
+    db = [tuple(2 * xmax * rand(d) .- xmax...) for _ in 1:10]
+    M = 16
+    M_max = 5
+    mL = 1 / log(M)
+    efConstruction = 100
+    method = NaiveHeurestic()
+    dist = Euclidean()
+    hnsw = HNSW(db, M, M_max, efConstruction, mL, method, dist)
+
+    target = tuple(2*xmax*rand(d) .- xmax...)
+
+    k = 2 
+    knn_idx = knn_search(hnsw, target, k, efConstruction)
+
+    knn_res = sort(db[knn_idx], by=x->dist(target, x))
+
+    true_res = sort(db, by=x->dist(target, x))[1:k] 
+
+    @test length(intersect(knn_res, true_res)) == k
+end
+
 @testset "Constructor" begin
     M = 3
     M_max = 6 
